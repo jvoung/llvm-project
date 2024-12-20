@@ -71,7 +71,8 @@ bool hasSmartPointerClassShape(const CXXRecordDecl &RD, bool &HasGet,
                                 ->getCanonicalTypeUnqualified();
         }
       }
-    } break;
+      break;
+    }
     default:
       break;
     }
