@@ -162,9 +162,13 @@ public:
       // FIXME: Consider replacing these with test cases that fail if the any
       // of the invariants is broken. That might not be easy due to the
       // transformations performed by `buildCNF`.
+
+      // These are very expensive (in loop).
+#ifdef EXPENSIVE_CHECKS
       assert(activeVarsAreUnassigned());
       assert(activeVarsFormWatchedLiterals());
       assert(unassignedVarsFormingWatchedLiteralsAreActive());
+#endif
 
       const Variable ActiveVar = ActiveVars[I];
 

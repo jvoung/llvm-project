@@ -64,6 +64,7 @@
 #include "OptionalValueConversionCheck.h"
 #include "ParentVirtualCallCheck.h"
 #include "PointerArithmeticOnPolymorphicObjectCheck.h"
+#include "PointerNullabilityCheck.h"
 #include "PosixReturnCheck.h"
 #include "RandomGeneratorSeedCheck.h"
 #include "RawMemoryCallOnNonTrivialTypeCheck.h"
@@ -227,6 +228,8 @@ public:
         "bugprone-optional-value-conversion");
     CheckFactories.registerCheck<PointerArithmeticOnPolymorphicObjectCheck>(
         "bugprone-pointer-arithmetic-on-polymorphic-object");
+    CheckFactories.registerCheck<PointerNullabilityCheck>(
+        "bugprone-pointer-nullability");
     CheckFactories.registerCheck<RedundantBranchConditionCheck>(
         "bugprone-redundant-branch-condition");
     CheckFactories.registerCheck<NarrowingConversionsCheck>(

@@ -1,0 +1,19 @@
+add_clang_library(clangAnalysisFlowSensitiveModelsNullability
+  ForwardingFunctions.cpp
+  LocFilter.cpp
+  PointerNullabilityAnalysis.cpp
+  PointerNullability.cpp
+  PointerNullabilityDiagnosis.cpp
+  PointerNullabilityLattice.cpp
+  PointerNullabilityMatchers.cpp
+  Pragma.cpp
+  TypeNullability.cpp
+  TypeTransferer.cpp
+  ValueTransferer.cpp
+
+  LINK_LIBS
+  clangAnalysis
+  clangAST
+  clangBasic
+  clangAnalysisFlowSensitive
+  )

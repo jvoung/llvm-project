@@ -1,0 +1,92 @@
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+#ifndef LLVM_CLANG_ANALYSIS_FLOWSENSITIVE_MODELS_NULLABILITY_POINTERNULLABILITYLATTICE_H
+#define LLVM_CLANG_ANALYSIS_FLOWSENSITIVE_MODELS_NULLABILITY_POINTERNULLABILITYLATTICE_H
+
+#include <functional>
+#include <ostream>
+
+#include "clang/AST/Expr.h"
+#include "clang/Analysis/FlowSensitive/ASTOps.h"
+#include "clang/Analysis/FlowSensitive/CachedConstAccessorsLattice.h"
+#include "clang/Analysis/FlowSensitive/DataflowLattice.h"
+#include "clang/Analysis/FlowSensitive/Models/Nullability/TypeNullability.h"
+#include "llvm/ADT/DenseMap.h"
+
+namespace clang::dataflow::nullability {
+class PointerNullabilityLatticeBase {
+public:
+  struct NonFlowSensitiveState {
+    // Nullability interpretation of types as set e.g. by per-file #pragmas.
+    TypeNullabilityDefaults Defaults;
+
+    llvm::DenseMap<const Expr *, TypeNullability> ExprToNullability;
+
+    // Overridden symbolic nullability for pointer-typed decls.
+    // These are set by PointerNullabilityAnalysis::assignNullabilityVariable,
+    // and take precedence over the declared type.
+    llvm::DenseMap<const ValueDecl *, PointerTypeNullability>
+        DeclTopLevelNullability;
+  };
+
+  PointerNullabilityLatticeBase(NonFlowSensitiveState &NFS) : NFS(NFS) {}
+
+  const TypeNullability *getTypeNullability(const Expr *E) const {
+    auto I = NFS.ExprToNullability.find(&dataflow::ignoreCFGOmittedNodes(*E));
+    return I == NFS.ExprToNullability.end() ? nullptr : &I->second;
+  }
+
+  /// Extract the nullability of the type of `D`.
+  ///
+  /// The file where the type is written affects the interpretation of
+  /// unannotated pointer types. If the nullability for `D` has been overridden,
+  /// the returned nullability will contain these overrides.
+  TypeNullability getTypeNullabilityWithOverrides(
+      const ValueDecl &D,
+      llvm::function_ref<GetTypeParamNullability> SubstituteTypeParam =
+          nullptr) {
+    TypeNullability Nullability =
+        clang::dataflow::nullability::getTypeNullability(D, defaults(),
+                                                         SubstituteTypeParam);
+    overrideNullabilityFromDecl(&D, Nullability);
+    return Nullability;
+  }
+
+  // If the `ExprToNullability` map already contains an entry for `E`, does
+  // nothing. Otherwise, inserts a new entry with key `E` and value computed by
+  // the provided GetNullability.
+  // Returns the (cached or computed) nullability.
+  const TypeNullability &insertExprNullabilityIfAbsent(
+      const Expr *E, const std::function<TypeNullability()> &GetNullability);
+
+  // If nullability for the decl D has been overridden, patch N to reflect it.
+  // (N is the nullability of an access to D).
+  void overrideNullabilityFromDecl(const Decl *D, TypeNullability &N) const;
+
+  bool operator==(const PointerNullabilityLatticeBase &Other) const {
+    return true;
+  }
+
+  dataflow::LatticeJoinEffect join(const PointerNullabilityLatticeBase &Other);
+
+  const TypeNullabilityDefaults &defaults() const { return NFS.Defaults; }
+
+private:
+  // Owned by the PointerNullabilityAnalysis object, shared by all lattice
+  // elements within one analysis run.
+  NonFlowSensitiveState &NFS;
+};
+
+using PointerNullabilityLattice =
+    dataflow::CachedConstAccessorsLattice<PointerNullabilityLatticeBase>;
+
+inline std::ostream &operator<<(std::ostream &OS,
+                                const PointerNullabilityLattice &) {
+  return OS << "nullability";
+}
+
+} // namespace clang::dataflow::nullability
+
+#endif // LLVM_CLANG_ANALYSIS_FLOWSENSITIVE_MODELS_NULLABILITY_POINTERNULLABILITYLATTICE_H

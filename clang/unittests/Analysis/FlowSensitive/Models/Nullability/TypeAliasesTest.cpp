@@ -1,0 +1,30 @@
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+// Tests for nullability information hidden behind aliases.
+
+#include "CheckDiagnostics.h"
+#include "gtest/gtest.h"
+
+namespace clang::dataflow::nullability {
+namespace {
+
+TEST(PointerNullabilityTest, Aliases) {
+  EXPECT_TRUE(checkDiagnostics(R"cc(
+    template <typename T>
+    struct Factory {
+      T get();
+    };
+    using NeverNull = int *_Nonnull;
+    using MaybeNull = int *_Nullable;
+
+    void target(Factory<NeverNull> never, Factory<MaybeNull> maybe) {
+      *never.get();
+      *maybe.get();  // [[unsafe]]
+    }
+  )cc"));
+}
+
+} // namespace
+} // namespace clang::dataflow::nullability

@@ -67,6 +67,7 @@ add_clang_library(clangTidyBugproneModule STATIC
   OptionalValueConversionCheck.cpp
   ParentVirtualCallCheck.cpp
   PointerArithmeticOnPolymorphicObjectCheck.cpp
+  PointerNullabilityCheck.cpp
   PosixReturnCheck.cpp
   RandomGeneratorSeedCheck.cpp
   RawMemoryCallOnNonTrivialTypeCheck.cpp
@@ -132,6 +133,7 @@ clang_target_link_libraries(clangTidyBugproneModule
   clangAnalysis
   clangAnalysisFlowSensitive
   clangAnalysisFlowSensitiveModels
+  clangAnalysisFlowSensitiveModelsNullability
   clangAST
   clangASTMatchers
   clangBasic
