@@ -1425,7 +1425,13 @@ std::unique_ptr<dataflow::Solver> makeDefaultSolverForDiagnosis() {
   // This limit is set based on empirical observations. Mostly, it is a rough
   // proxy for a line between "finite" and "effectively infinite", rather than a
   // strict limit on resource use.
-  constexpr std::int64_t MaxSATIterations = 8'000'000;
+  // NOTE: what we actually do is tiering strategy:
+  // - the WatchedLiteralsSolver for very simple functions
+  // - a production grade SAT solver (CP-SAT or Z3) if not simple
+  // CP-SAT often takes longer to set up (perhaps from pre-solving step),
+  // so for simple functions it has more overhead than the basic
+  // WatchedLiteralsSolver.
+  constexpr std::int64_t MaxSATIterations = 50'000'000;
   return std::make_unique<dataflow::WatchedLiteralsSolver>(MaxSATIterations);
 }
 
