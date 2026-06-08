@@ -42,8 +42,10 @@
 #include "clang/Analysis/FlowSensitive/Models/Nullability/TypeNullability.h"
 #include "clang/Analysis/FlowSensitive/Solver.h"
 #include "clang/Analysis/FlowSensitive/StorageLocation.h"
+#include "clang/Analysis/FlowSensitive/TieredSolver.h"
 #include "clang/Analysis/FlowSensitive/Value.h"
 #include "clang/Analysis/FlowSensitive/WatchedLiteralsSolver.h"
+#include "clang/Analysis/FlowSensitive/Z3Solver.h"
 #include "clang/Basic/AttrKinds.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/SourceLocation.h"
@@ -1425,14 +1427,21 @@ std::unique_ptr<dataflow::Solver> makeDefaultSolverForDiagnosis() {
   // This limit is set based on empirical observations. Mostly, it is a rough
   // proxy for a line between "finite" and "effectively infinite", rather than a
   // strict limit on resource use.
-  // NOTE: what we actually do is tiering strategy:
-  // - the WatchedLiteralsSolver for very simple functions
-  // - a production grade SAT solver (CP-SAT or Z3) if not simple
-  // CP-SAT often takes longer to set up (perhaps from pre-solving step),
-  // so for simple functions it has more overhead than the basic
-  // WatchedLiteralsSolver.
-  constexpr std::int64_t MaxSATIterations = 50'000'000;
+#ifdef LLVM_WITH_Z3
+  // When Z3 is available, do a tiering strategy:
+  // - a simple solver for simple functions
+  // - fall back to a production-grade solver for more complex functions.
+  llvm::SmallVector<std::unique_ptr<dataflow::Solver>> Tiers;
+  constexpr std::int64_t MaxSATIterations = 3'000'000;
+  Tiers.push_back(std::make_unique<dataflow::WatchedLiteralsSolver>(MaxSATIterations));
+
+  constexpr std::uint32_t Z3Rlimit = 500'000'000;
+  Tiers.push_back(std::make_unique<dataflow::Z3Solver>(Z3Rlimit));
+  return std::make_unique<TieredSolver>(std::move(Tiers));
+#else
+  constexpr std::int64_t MaxSATIterations = 500'000'000;
   return std::make_unique<dataflow::WatchedLiteralsSolver>(MaxSATIterations);
+#endif
 }
 
 llvm::Expected<llvm::SmallVector<PointerNullabilityDiagnostic>>
