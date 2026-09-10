@@ -45,6 +45,11 @@ protected:
 
   // Create a specialization for the solver type to test.
   SolverT createSolverWithLowTimeout();
+
+  // Create solver to test re-use. If testing a single call, prefer solve().
+  SolverT createSolver() {
+    return SolverT();
+  }
 };
 
 TYPED_TEST_SUITE_P(SolverTest);
@@ -368,6 +373,98 @@ TYPED_TEST_P(SolverTest, SimpleButLargeContradiction) {
   EXPECT_FALSE(solver.reachedLimit());
 }
 
+TYPED_TEST_P(SolverTest, ReuseSolverConflictingAssignmentsOnSameVars) {
+  TypeParam solver = this->createSolver();
+
+  ConstraintContext Ctx;
+  auto X = Ctx.atom();
+  auto Y = Ctx.atom();
+  auto Z = Ctx.atom();
+
+  // 1. Solve constraints forcing X = true, Y = false, Z = true.
+  EXPECT_THAT(solver.solve({X, Ctx.neg(Y), Z}),
+              sat(UnorderedElementsAre(Pair(X->getAtom(), AssignedTrue),
+                                       Pair(Y->getAtom(), AssignedFalse),
+                                       Pair(Z->getAtom(), AssignedTrue))));
+
+  // 2. Immediately solve opposite constraints on the exact same variables,
+  //    forcing X = false, Y = true, Z = false.
+  //    Verifies that no previous assignments, assumptions, or polarity biases persist.
+  EXPECT_THAT(solver.solve({Ctx.neg(X), Y, Ctx.neg(Z)}),
+              sat(UnorderedElementsAre(Pair(X->getAtom(), AssignedFalse),
+                                       Pair(Y->getAtom(), AssignedTrue),
+                                       Pair(Z->getAtom(), AssignedFalse))));
+
+  // 3. Flip back to X = true, Y = false, Z = true to verify the solver
+  //    can alternate back and forth cleanly across repeated solves.
+  EXPECT_THAT(solver.solve({X, Ctx.neg(Y), Z}),
+              sat(UnorderedElementsAre(Pair(X->getAtom(), AssignedTrue),
+                                       Pair(Y->getAtom(), AssignedFalse),
+                                       Pair(Z->getAtom(), AssignedTrue))));
+
+  // 4. An implication chain (X => Y) ^ (Y => Z) with X and !Z is unsatisfiable.
+  EXPECT_THAT(
+      solver.solve({Ctx.impl(X, Y), Ctx.impl(Y, Z), X, Ctx.neg(Z)}),
+      unsat());
+
+  // 5. Solving X and !Z alone without the implication chain.
+  //    If the implication constraints leaked from the previous query,
+  //    this would falsely be unsat.
+  EXPECT_THAT(solver.solve({X, Ctx.neg(Z)}),
+              sat(UnorderedElementsAre(Pair(X->getAtom(), AssignedTrue),
+                                       Pair(Z->getAtom(), AssignedFalse))));
+
+  // 6. An explicit contradiction on X.
+  EXPECT_THAT(solver.solve({X, Ctx.neg(X)}), unsat());
+
+  // 7. Immediately re-solve X alone.
+  EXPECT_THAT(solver.solve({X}),
+              sat(UnorderedElementsAre(Pair(X->getAtom(), AssignedTrue))));
+}
+
+TYPED_TEST_P(SolverTest, ReuseSolverForMultipleSolves) {
+  TypeParam solver = this->createSolver();
+
+  Arena A;
+  auto TransitiveConflictConstraints = parseFormulas(A, R"(
+     (V0 = V1)
+     (V1 = V2)
+     V2
+     !V0
+  )");
+  EXPECT_THAT(solver.solve(TransitiveConflictConstraints), unsat());
+
+  // The next call to solver shouldn't have the prior constraints,
+  // which were unsat.
+  auto DemorganConstraints = parseFormulas(A, R"(
+     (!(V0 | V1) = (!V0 & !V1))
+     (!(V2 & V3) = (!V2 | !V3))
+  )");
+  EXPECT_THAT(solver.solve(DemorganConstraints), sat(_));
+
+  ConstraintContext Ctx;
+  auto X = Ctx.atom();
+  auto Y = Ctx.atom();
+  auto XOrY = Ctx.disj(X, Y);
+  auto NotX = Ctx.neg(X);
+  auto NotXOrY = Ctx.disj(NotX, Y);
+  auto NotY = Ctx.neg(Y);
+  auto NotXOrNotY = Ctx.disj(NotX, NotY);
+
+  // (X v Y) ^ (!X v Y) ^ (!X v !Y)
+  EXPECT_THAT(solver.solve({XOrY, NotXOrY, NotXOrNotY}),
+              sat(UnorderedElementsAre(Pair(X->getAtom(), AssignedFalse),
+                                       Pair(Y->getAtom(), AssignedTrue))));
+
+  // A few more rounds of re-use.
+  EXPECT_THAT(solver.solve(TransitiveConflictConstraints), unsat());
+  EXPECT_THAT(solver.solve(DemorganConstraints), sat(_));
+  EXPECT_THAT(solver.solve(TransitiveConflictConstraints), unsat());
+  EXPECT_THAT(solver.solve({XOrY, NotXOrY, NotXOrNotY}),
+              sat(UnorderedElementsAre(Pair(X->getAtom(), AssignedFalse),
+                                       Pair(Y->getAtom(), AssignedTrue))));
+}
+
 REGISTER_TYPED_TEST_SUITE_P(
     SolverTest, Var, NegatedVar, UnitConflict, DistinctVars, DoubleNegation,
     NegatedDisjunction, NegatedConjunction, DisjunctionSameVarWithNegation,
@@ -376,7 +473,9 @@ REGISTER_TYPED_TEST_SUITE_P(
     IffSameVars, IffDistinctVars, IffWithUnits, IffWithUnitsConflict,
     IffTransitiveConflict, DeMorgan, RespectsAdditionalConstraints,
     ImplicationIsEquivalentToDNF, ImplicationConflict,
-    ReachedLimitsReflectsTimeouts, SimpleButLargeContradiction);
+    ReachedLimitsReflectsTimeouts, SimpleButLargeContradiction,
+    ReuseSolverForMultipleSolves,
+    ReuseSolverConflictingAssignmentsOnSameVars);
 
 } // namespace clang::dataflow::test
 

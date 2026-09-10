@@ -79,8 +79,14 @@ Solver::Result Z3Solver::solve(
 
   if (CNF.knownContradictory()) return Result::Unsatisfiable();
 
-  llvm::SMTSolverRef Solver = llvm::CreateZ3Solver();
-  Solver->setBoolParam("model", true);
+  // Prepare either with a lighterweight reset() or a fuller GC after N calls.
+  ++SolveCalls;
+  if (SolveCalls % kSolveCallsBeforeGC == 0) {
+    Solver = llvm::CreateZ3Solver();
+    Solver->setBoolParam("model", true);
+  } else {
+    Solver->reset();
+  }
   if (Rlimit != 0) {
     std::uint32_t Remaining = Rlimit - RlimitUsed;
     Solver->setUnsignedParam("rlimit", Remaining);

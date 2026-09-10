@@ -1432,10 +1432,10 @@ std::unique_ptr<dataflow::Solver> makeDefaultSolverForDiagnosis() {
   // - a simple solver for simple functions
   // - fall back to a production-grade solver for more complex functions.
   llvm::SmallVector<std::unique_ptr<dataflow::Solver>> Tiers;
-  constexpr std::int64_t MaxSATIterations = 3'000'000;
+  constexpr std::int64_t MaxSATIterations = 5'000'000;
   Tiers.push_back(std::make_unique<dataflow::WatchedLiteralsSolver>(MaxSATIterations));
 
-  constexpr std::uint32_t Z3Rlimit = 500'000'000;
+  constexpr std::uint32_t Z3Rlimit = 1'000'000'000;
   Tiers.push_back(std::make_unique<dataflow::Z3Solver>(Z3Rlimit));
   return std::make_unique<TieredSolver>(std::move(Tiers));
 #else
