@@ -1721,7 +1721,7 @@ TEST_P(UncheckedStatusOrAccessModelTest, CorrelatedBranches) {
 
     void target(bool b, STATUSOR_INT sor) {
       if (b || sor.ok()) {
-        if (!b) sor.value();
+        if (!b) sor.value();  $unsafe_if_simple
       }
     }
   )cc");
@@ -1730,7 +1730,7 @@ TEST_P(UncheckedStatusOrAccessModelTest, CorrelatedBranches) {
 
     void target(bool b, STATUSOR_INT sor) {
       if (b && !sor.ok()) return;
-      if (b) sor.value();
+      if (b) sor.value();  $unsafe_if_simple
     }
   )cc");
   ExpectDiagnosticsFor(R"cc(
@@ -1747,7 +1747,7 @@ TEST_P(UncheckedStatusOrAccessModelTest, CorrelatedBranches) {
     void target(bool b, STATUSOR_INT sor) {
       if (b) return;
       if (sor.ok()) b = true;
-      if (b) sor.value();
+      if (b) sor.value();  $unsafe_if_simple
     }
   )cc");
 }
@@ -2393,6 +2393,8 @@ TEST_P(UncheckedStatusOrAccessModelTest, Status) {
 }
 
 TEST_P(UncheckedStatusOrAccessModelTest, StatusBranches) {
+  // Check if we can correlate the status of a Status `s` with the
+  // StatusOr `sor`.
   ExpectDiagnosticsFor(R"cc(
 #include "unchecked_statusor_access_test_defs.h"
 
@@ -2407,7 +2409,7 @@ TEST_P(UncheckedStatusOrAccessModelTest, StatusBranches) {
           s = sor.status();
         }
       }
-      if (s.ok()) *sor;
+      if (s.ok()) *sor;  $unsafe_if_simple
     }
   )cc");
 }
@@ -3629,13 +3631,18 @@ TEST_P(UncheckedStatusOrAccessModelTest, Emplace) {
       sor.value();
     }
   )cc");
+}
+
+// Requires tracking correlated branch conditions across the join after the
+// first `if (b)` (not handled by `simple_bool_model`).
+TEST_P(UncheckedStatusOrAccessModelTest, EmplaceCorrelatedBranches) {
   ExpectDiagnosticsFor(R"cc(
 #include "unchecked_statusor_access_test_defs.h"
 
     void target(bool b) {
       STATUSOR_INT sor;
       if (b) sor.emplace(42);
-      if (b) sor.value();
+      if (b) sor.value();  $unsafe_if_simple
     }
   )cc");
 }
@@ -3831,8 +3838,8 @@ TEST_P(UncheckedStatusOrAccessModelTest, ConstructStatusOrFromReference) {
       if (sor1.ok() && !sor2.ok()) {
       } else if (!sor1.ok() && sor2.ok()) {
       } else {
-        sor1.value();
-        sor2.value();
+        sor1.value();  $unsafe_if_simple
+        sor2.value();  $unsafe_if_simple
       }
     }
   )cc");
@@ -3853,8 +3860,8 @@ TEST_P(UncheckedStatusOrAccessModelTest, ConstructStatusFromReference) {
       } else if (!s1.ok() && s2.ok()) {
       } else {
         if (s1 != sor1.status() || s2 != sor2.status()) return;
-        sor1.value();
-        sor2.value();
+        sor1.value();  $unsafe_if_simple
+        sor2.value();  $unsafe_if_simple
       }
     }
   )cc");

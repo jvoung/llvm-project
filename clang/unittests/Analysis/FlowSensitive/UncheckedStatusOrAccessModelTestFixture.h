@@ -74,6 +74,10 @@ template <typename Model>
 class UncheckedStatusOrAccessModelTestExecutor
     : public UncheckedStatusOrAccessModelTestExecutorBase {
 public:
+  explicit UncheckedStatusOrAccessModelTestExecutor(
+      BoolModelKind BoolModel = BoolModelKind::SAT)
+      : BoolModel(BoolModel) {}
+
   void ExpectDiagnosticsFor(
       std::string SourceCode,
       UncheckedStatusOrAccessModelTestAliasKind AliasKind) const override {
@@ -95,6 +99,10 @@ public:
   void ExpectDiagnosticsFor(
       std::string SourceCode, FuncDeclMatcher FuncMatcher,
       UncheckedStatusOrAccessModelTestAliasKind AliasKind) const {
+    ReplaceAllOccurrences(SourceCode, "$unsafe_if_simple",
+                          BoolModel == BoolModelKind::Simple ? "// [[unsafe]]"
+                                                             : "");
+
     std::vector<std::pair<std::string, std::string>> Headers =
         GetHeaders(AliasKind);
 
@@ -104,6 +112,9 @@ public:
         test::AnalysisInputs<Model>(
             SourceCode, std::move(FuncMatcher),
             [](ASTContext &Ctx, Environment &Env) { return Model(Ctx, Env); })
+            .withBuiltinOptions({/*ContextSensitiveOpts=*/std::nullopt,
+                                 /*Logger=*/nullptr,
+                                 /*BoolModel=*/BoolModel})
             .withPostVisitCFG(
                 [&Diagnostics,
                  Diagnoser = UncheckedStatusOrAccessDiagnoser(Options)](
@@ -138,6 +149,20 @@ public:
   }
 
   ~UncheckedStatusOrAccessModelTestExecutor() override = default;
+
+private:
+  static void ReplaceAllOccurrences(std::string &S, llvm::StringRef Pattern,
+                                    llvm::StringRef Replacement) {
+    size_t Pos = 0;
+    while (true) {
+      Pos = S.find(Pattern, Pos);
+      if (Pos == std::string::npos)
+        break;
+      S.replace(Pos, Pattern.size(), Replacement);
+    }
+  }
+
+  BoolModelKind BoolModel;
 };
 
 class UncheckedStatusOrAccessModelTest
