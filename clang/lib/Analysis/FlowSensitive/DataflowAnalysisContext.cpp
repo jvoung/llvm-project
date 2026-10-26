@@ -44,6 +44,10 @@ static llvm::cl::opt<std::string> DataflowLog(
 namespace clang {
 namespace dataflow {
 
+std::string boolModelKindToString(BoolModelKind Kind) {
+  return Kind == BoolModelKind::SAT ? "SAT" : "Simple";
+}
+
 FieldSet DataflowAnalysisContext::computeModeledFields(QualType Type) {
   // During context-sensitive analysis, a struct may be allocated in one
   // function, but its field accessed in a function lower in the stack than

@@ -1,4 +1,9 @@
 // RUN: %check_clang_tidy -std=c++17 %s bugprone-pointer-nullability %t --
+// RUN: %check_clang_tidy -std=c++17 %s bugprone-pointer-nullability %t \
+// RUN: -config='{CheckOptions: \
+// RUN:   [{key: bugprone-pointer-nullability.BoolModel, \
+// RUN:     value: "Simple"}]}' \
+// RUN: --
 
 // This file includes a minimal test suite to ensure that the check integrated
 // with the analysis correctly. However, we leave the vast majority of tests to

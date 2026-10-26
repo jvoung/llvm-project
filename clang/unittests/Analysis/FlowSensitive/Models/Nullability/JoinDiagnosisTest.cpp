@@ -17,6 +17,11 @@
 // b) That the nullability state of a pointer is correctly "entangled" with a
 //    boolean condition. These checks should be replaced with equivalent tests
 //    in path_sensitive.cc (to the extent that those don't exist already).
+//    Note: `SimpleBoolModel` does not correlate joined values with path
+//    conditions (it creates fresh unconstrained atoms at joins), so a
+//    subsequent `if (b)` / `else` branch after a join cannot recover the
+//    branch-specific nullability of `x` from the earlier `if (b)` when `x` is
+//    nullable after the join.
 
 namespace clang::dataflow::nullability {
 namespace {
@@ -33,7 +38,7 @@ TEST(PointerNullabilityTest, JoinNullAndNonNull) {
       }
       *x;  // [[unsafe]]
       if (b) {
-        *x;
+        *x;  $unsafe_if_simple
       } else {
         *x;  // [[unsafe]]
       }
@@ -73,7 +78,7 @@ TEST(PointerNullabilityTest, JoinNullAndUnknown) {
       }
       *x;  // [[unsafe]]
       if (b) {
-        *x;
+        *x;  $unsafe_if_simple
       } else {
         *x;  // [[unsafe]]
       }
@@ -95,7 +100,7 @@ TEST(PointerNullabilityTest, JoinNonNullAndNull) {
       if (b) {
         *x;  // [[unsafe]]
       } else {
-        *x;
+        *x;  $unsafe_if_simple
       }
     }
   )cc"));
@@ -135,7 +140,7 @@ TEST(PointerNullabilityTest, JoinNonNullAndNullable) {
       if (b) {
         *x;  // [[unsafe]]
       } else {
-        *x;
+        *x;  $unsafe_if_simple
       }
     }
   )cc"));
@@ -193,7 +198,7 @@ TEST(PointerNullabilityTest, JoinNullableAndNonNull) {
       }
       *x;  // [[unsafe]]
       if (b) {
-        *x;
+        *x;  $unsafe_if_simple
       } else {
         *x;  // [[unsafe]]
       }
@@ -233,7 +238,7 @@ TEST(PointerNullabilityTest, JoinNullableAndUnknown) {
       }
       *x;  // [[unsafe]]
       if (b) {
-        *x;
+        *x;  $unsafe_if_simple
       } else {
         *x;  // [[unsafe]]
       }
@@ -255,7 +260,7 @@ TEST(PointerNullabilityTest, JoinUnknownAndNull) {
       if (b) {
         *x;  // [[unsafe]]
       } else {
-        *x;
+        *x;  $unsafe_if_simple
       }
     }
   )cc"));
@@ -295,7 +300,7 @@ TEST(PointerNullabilityTest, JoinUnknownAndNullable) {
       if (b) {
         *x;  // [[unsafe]]
       } else {
-        *x;
+        *x;  $unsafe_if_simple
       }
     }
   )cc"));

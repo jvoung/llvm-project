@@ -401,5 +401,24 @@ TEST(PointerNullabilityTest, FieldWithLoopInBetweenDefinitionAndUse) {
   )cc"));
 }
 
+TEST(PointerNullabilityTest, PointerWithLoopInBetweenDefinitionAndUse) {
+  EXPECT_TRUE(checkDiagnostics(R"cc(
+    bool* GetUnknown();
+
+    void target() {
+      bool* b = nullptr;
+      for (int i = 0; i < 1; ++i) {
+        if (b == nullptr) {
+          b = GetUnknown();
+        }
+        (void)*b;
+        for (int j = 0; j < 1; ++j) {
+        }
+        (void)*b;
+      }
+    }
+  )cc"));
+}
+
 } // namespace
 } // namespace clang::dataflow::nullability

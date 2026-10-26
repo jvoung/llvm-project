@@ -10,16 +10,32 @@
 #define LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_BUGPRONE_POINTERNULLABILITYCHECK_H
 
 #include <memory>
+#include <utility>
 
 #include "../ClangTidyCheck.h"
 #include "../ClangTidyDiagnosticConsumer.h"
 #include "../ClangTidyOptions.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/Analysis/FlowSensitive/DataflowAnalysisContext.h"
 #include "clang/Analysis/FlowSensitive/Models/Nullability/LocFilter.h"
 #include "clang/Analysis/FlowSensitive/Models/Nullability/Pragma.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/LangOptions.h"
+
+namespace clang::tidy {
+template <> struct OptionEnumMapping<dataflow::BoolModelKind> {
+  static llvm::ArrayRef<std::pair<dataflow::BoolModelKind, llvm::StringRef>>
+  getEnumMapping() {
+    static constexpr std::pair<dataflow::BoolModelKind, llvm::StringRef>
+        Mapping[] = {
+            {dataflow::BoolModelKind::SAT, "SAT"},
+            {dataflow::BoolModelKind::Simple, "Simple"},
+        };
+    return {Mapping};
+  }
+};
+} // namespace clang::tidy
 
 namespace clang::tidy::bugprone {
 
@@ -31,7 +47,9 @@ class PointerNullabilityCheck : public ClangTidyCheck {
 public:
   PointerNullabilityCheck(StringRef Name, ClangTidyContext *Context)
       : ClangTidyCheck(Name, Context),
-        CheckMainFileOnly(Options.get("MainFileOnly", true)) {}
+        CheckMainFileOnly(Options.get("MainFileOnly", true)),
+        BoolModel(Options.getLocalOrGlobal("BoolModel",
+                                           dataflow::BoolModelKind::SAT)) {}
 
   void registerPPCallbacks(const SourceManager &, Preprocessor *,
                            Preprocessor *ModuleExpanderPP) override;
@@ -46,6 +64,7 @@ public:
   }
   void storeOptions(ClangTidyOptions::OptionMap &Opts) override {
     Options.store(Opts, "MainFileOnly", CheckMainFileOnly);
+    Options.store(Opts, "BoolModel", BoolModel);
   }
 
 private:
@@ -56,6 +75,8 @@ private:
   // headers that are only transitively included. This is useful if the UI
   // wouldn't show diagnostics in other files anyway (e.g., for code review).
   bool CheckMainFileOnly;
+
+  dataflow::BoolModelKind BoolModel;
 
   // Source location filter checking whether a location is in the main file or a
   // header associated with the main file, i.e. a header that has the same file

@@ -19,6 +19,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/Analysis/CFG.h"
+#include "clang/Analysis/FlowSensitive/DataflowAnalysisContext.h"
 #include "clang/Analysis/FlowSensitive/Models/Nullability/PointerNullabilityDiagnosis.h"
 #include "clang/Analysis/FlowSensitive/Models/Nullability/Pragma.h"
 #include "clang/Basic/LLVM.h"
@@ -35,8 +36,19 @@
 
 namespace clang::dataflow::nullability {
 
+/// Replaces all occurrences of `Pattern` in `S` with `Replacement`.
+static void replaceAllOccurrences(std::string &S, llvm::StringRef Pattern,
+                                  llvm::StringRef Replacement) {
+  size_t Pos = 0;
+  while ((Pos = S.find(Pattern, Pos)) != std::string::npos) {
+    S.replace(Pos, Pattern.size(), Replacement);
+    Pos += Replacement.size();
+  }
+}
+
 bool checkDiagnostics(ASTContext &AST, llvm::Annotations AnnotatedCode,
-                      const NullabilityPragmas &Pragmas, bool AllowUntracked) {
+                      const NullabilityPragmas &Pragmas, bool AllowUntracked,
+                      dataflow::BoolModelKind BoolModel) {
   using ast_matchers::BoundNodes;
   using ast_matchers::hasAnyName;
   using ast_matchers::match;
@@ -69,7 +81,9 @@ bool checkDiagnostics(ASTContext &AST, llvm::Annotations AnnotatedCode,
 
     SmallVector<PointerNullabilityDiagnostic> Diagnostics;
     if (llvm::Error Err =
-            diagnosePointerNullability(Target, Pragmas).moveInto(Diagnostics)) {
+            diagnosePointerNullability(Target, Pragmas,
+                                       makeDefaultSolverForDiagnosis, BoolModel)
+                .moveInto(Diagnostics)) {
       ADD_FAILURE() << Err;
       return false;
     }
@@ -133,8 +147,16 @@ bool checkDiagnostics(ASTContext &AST, llvm::Annotations AnnotatedCode,
 }
 
 static bool checkDiagnostics(llvm::StringRef SourceCode, TestLanguage Lang,
-                             bool AllowUntracked) {
-  llvm::Annotations AnnotatedCode(SourceCode);
+                             bool AllowUntracked,
+                             dataflow::BoolModelKind BoolModel) {
+  SCOPED_TRACE(llvm::Twine("BoolModel=")
+                   .concat(dataflow::boolModelKindToString(BoolModel))
+                   .str());
+  std::string ReplacedSource(SourceCode);
+  replaceAllOccurrences(
+      ReplacedSource, "$unsafe_if_simple",
+      BoolModel == dataflow::BoolModelKind::Simple ? "// [[unsafe]]" : "");
+  llvm::Annotations AnnotatedCode(ReplacedSource);
   clang::TestInputs Inputs(AnnotatedCode.code());
   Inputs.Language = Lang;
   Inputs.ExtraArgs = {
@@ -163,26 +185,37 @@ static bool checkDiagnostics(llvm::StringRef SourceCode, TestLanguage Lang,
     return std::make_unique<Action>(Pragmas);
   };
   clang::TestAST AST(Inputs);
-  return checkDiagnostics(AST.context(), AnnotatedCode, Pragmas,
-                          AllowUntracked);
+  return checkDiagnostics(AST.context(), AnnotatedCode, Pragmas, AllowUntracked,
+                          BoolModel);
 }
 
 // Run in C++17 and C++20 mode to cover differences in the AST between modes
-// (e.g. C++20 can contain `CXXRewrittenBinaryOperator`).
+// (e.g. C++20 can contain `CXXRewrittenBinaryOperator`), and under both the
+// SAT and Simple boolean models.
 static constexpr std::array<TestLanguage, 2> CXXLanguagesToTest = {
     TestLanguage::Lang_CXX17, TestLanguage::Lang_CXX20};
+static constexpr std::array<dataflow::BoolModelKind, 2> BoolModelsToTest = {
+    dataflow::BoolModelKind::SAT, dataflow::BoolModelKind::Simple};
 
 bool checkDiagnostics(llvm::StringRef SourceCode) {
-  for (TestLanguage Lang : CXXLanguagesToTest)
-    if (!checkDiagnostics(SourceCode, Lang, /*AllowUntracked=*/false))
-      return false;
+  for (TestLanguage Lang : CXXLanguagesToTest) {
+    for (dataflow::BoolModelKind BoolModel : BoolModelsToTest) {
+      if (!checkDiagnostics(SourceCode, Lang, /*AllowUntracked=*/false,
+                            BoolModel))
+        return false;
+    }
+  }
   return true;
 }
 
 bool checkDiagnosticsHasUntracked(llvm::StringRef SourceCode) {
-  for (TestLanguage Lang : CXXLanguagesToTest)
-    if (!checkDiagnostics(SourceCode, Lang, /*AllowUntracked=*/true))
-      return false;
+  for (TestLanguage Lang : CXXLanguagesToTest) {
+    for (dataflow::BoolModelKind BoolModel : BoolModelsToTest) {
+      if (!checkDiagnostics(SourceCode, Lang, /*AllowUntracked=*/true,
+                            BoolModel))
+        return false;
+    }
+  }
   return true;
 }
 
@@ -190,8 +223,11 @@ bool checkDiagnosticsWithMin(llvm::StringRef SourceCode, TestLanguage Min) {
   for (TestLanguage Lang : CXXLanguagesToTest) {
     if (Lang < Min)
       continue;
-    if (!checkDiagnostics(SourceCode, Lang, /*AllowUntracked=*/false))
-      return false;
+    for (dataflow::BoolModelKind BoolModel : BoolModelsToTest) {
+      if (!checkDiagnostics(SourceCode, Lang, /*AllowUntracked=*/false,
+                            BoolModel))
+        return false;
+    }
   }
   return true;
 }

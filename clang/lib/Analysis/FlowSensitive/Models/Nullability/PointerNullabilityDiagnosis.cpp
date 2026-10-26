@@ -1447,7 +1447,8 @@ std::unique_ptr<dataflow::Solver> makeDefaultSolverForDiagnosis() {
 llvm::Expected<llvm::SmallVector<PointerNullabilityDiagnostic>>
 diagnosePointerNullability(const ValueDecl *VD,
                            const NullabilityPragmas &Pragmas,
-                           const SolverFactory &MakeSolver) {
+                           const SolverFactory &MakeSolver,
+                           dataflow::BoolModelKind BoolModel) {
   // This limit is set based on empirical observations. Mostly, it is a rough
   // proxy for a line between "finite" and "effectively infinite", rather than a
   // strict limit on resource use.
@@ -1489,7 +1490,9 @@ diagnosePointerNullability(const ValueDecl *VD,
     return CFG.takeError();
 
   std::unique_ptr<dataflow::Solver> Solver = MakeSolver();
-  DataflowAnalysisContext AnalysisContext(*Solver);
+  DataflowAnalysisContext AnalysisContext(
+      *Solver, {/*ContextSensitiveOpts=*/std::nullopt, /*Logger=*/nullptr,
+                /*BoolModel=*/BoolModel});
   Environment Env(AnalysisContext, *Func);
 
   PointerNullabilityAnalysis Analysis(Ctx, Env, Pragmas);

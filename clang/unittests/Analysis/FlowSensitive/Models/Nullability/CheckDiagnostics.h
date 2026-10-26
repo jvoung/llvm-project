@@ -6,6 +6,7 @@
 #define LLVM_CLANG_UNITTESTS_ANALYSIS_FLOWSENSITIVE_MODELS_NULLABILITY_CHECKDIAGNOSTICS_H
 
 #include "clang/AST/ASTContext.h"
+#include "clang/Analysis/FlowSensitive/DataflowAnalysisContext.h"
 #include "clang/Analysis/FlowSensitive/Models/Nullability/Pragma.h"
 #include "clang/Testing/CommandLineArgs.h"
 #include "llvm/ADT/StringRef.h"
@@ -25,9 +26,11 @@ bool checkDiagnosticsHasUntracked(llvm::StringRef SourceCode);
 
 bool checkDiagnosticsWithMin(llvm::StringRef SourceCode, TestLanguage Min);
 
-bool checkDiagnostics(ASTContext &AST, llvm::Annotations AnnotatedCode,
-                      const NullabilityPragmas &Pragmas = NullabilityPragmas(),
-                      bool AllowUntracked = false);
+bool checkDiagnostics(
+    ASTContext &AST, llvm::Annotations AnnotatedCode,
+    const NullabilityPragmas &Pragmas = NullabilityPragmas(),
+    bool AllowUntracked = false,
+    dataflow::BoolModelKind BoolModel = dataflow::BoolModelKind::SAT);
 
 } // namespace clang::dataflow::nullability
 

@@ -347,7 +347,7 @@ TEST(PointerNullabilityTest, AnalyzeFunctionWithForwardDeclarationOnlyOnce) {
   ASSERT_TRUE(Result.isSingleResult());
   auto *Target = cast<FunctionDecl>(Result.front());
   SmallVector<FunctionDecl *> Redecls(Target->redecls());
-  ASSERT_EQ(Redecls.size(), 2);
+  ASSERT_EQ(Redecls.size(), 2u);
 
   EXPECT_TRUE(Redecls[0]->doesThisDeclarationHaveABody());
   EXPECT_THAT_EXPECTED(diagnosePointerNullability(Redecls[0], NoPragmas),

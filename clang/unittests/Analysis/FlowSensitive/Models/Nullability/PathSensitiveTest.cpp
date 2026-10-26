@@ -11,6 +11,10 @@ namespace clang::dataflow::nullability {
 namespace {
 
 TEST(PointerNullabilityTest, ConditionalInitialization) {
+  // `SimpleBoolModel` creates unconstrained atoms when joining `p` after
+  // `if (!b) p = produce_int()`, without recording that `!b` implies `p` is
+  // non-null. Consequently, after `if (b) p = produce_int()`, the `!b` branch
+  // still considers `p` nullable.
   EXPECT_TRUE(checkDiagnostics(R"cc(
     struct S {
       bool b;
@@ -32,7 +36,7 @@ TEST(PointerNullabilityTest, ConditionalInitialization) {
       }
       if (b) p = produce_int();
 
-      (void)*p;
+      (void)*p;  $unsafe_if_simple
     }
   )cc"));
 }
@@ -68,6 +72,11 @@ TEST(PointerNullabilityTest, ComplexLoopCondition) {
 }
 
 TEST(PointerNullabilityTest, OnePointerGuaranteedNonnull) {
+  // On the RHS fallthrough edge of short-circuit `if (!p1 && !p2) return;`,
+  // `SimpleBoolModel::assume` reduces `!(!p1 && !p2)` immediately using the
+  // branch-local `p1 == nullptr` assignment and does not retain the disjunctive
+  // formula in `AssumedFormulas` across the join with the LHS short-circuit
+  // edge, so it cannot deduce that `p2` is non-null in the `else` branch.
   EXPECT_TRUE(checkDiagnostics(R"cc(
     void target(int *_Nullable p1, int *_Nullable p2) {
       if (!p1 && !p2) return;
@@ -75,7 +84,7 @@ TEST(PointerNullabilityTest, OnePointerGuaranteedNonnull) {
         *p1;
       else
         // `p2` must be nonnull or we would have returned above.
-        *p2;
+        *p2;  $unsafe_if_simple
     }
   )cc"));
 }

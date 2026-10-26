@@ -173,7 +173,7 @@ void PointerNullabilityCheck::check(const MatchFinder::MatchResult &Result) {
   }
 
   auto Diags = clang::dataflow::nullability::diagnosePointerNullability(
-      VD, Pragmas, makeSatSolver);
+      VD, Pragmas, makeSatSolver, BoolModel);
   if (!Diags) {
     diag(VD->getBeginLoc(), "internal error: %0") << Diags.takeError();
     return;

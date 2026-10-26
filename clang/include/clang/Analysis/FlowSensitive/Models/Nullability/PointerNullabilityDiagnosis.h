@@ -9,6 +9,7 @@
 #include <string>
 
 #include "clang/AST/Decl.h"
+#include "clang/Analysis/FlowSensitive/DataflowAnalysisContext.h"
 #include "clang/Analysis/FlowSensitive/Models/Nullability/PointerNullabilityAnalysis.h"
 #include "clang/Analysis/FlowSensitive/Models/Nullability/Pragma.h"
 #include "clang/Analysis/FlowSensitive/Solver.h"
@@ -91,7 +92,8 @@ std::unique_ptr<dataflow::Solver> makeDefaultSolverForDiagnosis();
 llvm::Expected<llvm::SmallVector<PointerNullabilityDiagnostic>>
 diagnosePointerNullability(
     const ValueDecl *VD, const NullabilityPragmas &Pragmas,
-    const SolverFactory &MakeSolver = makeDefaultSolverForDiagnosis);
+    const SolverFactory &MakeSolver = makeDefaultSolverForDiagnosis,
+    dataflow::BoolModelKind BoolModel = dataflow::BoolModelKind::SAT);
 
 } // namespace clang::dataflow::nullability
 

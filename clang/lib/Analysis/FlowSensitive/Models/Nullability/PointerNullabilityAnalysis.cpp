@@ -122,30 +122,46 @@ static const Formula *mergeFormulas(const Formula *Bool1,
     return Bool1;
   }
 
-  if (Bool1 == nullptr || Bool2 == nullptr)
+  if (Bool1 == nullptr && Bool2 == nullptr)
     return nullptr;
 
   Arena &A = MergedEnv.arena();
+  // If one side is Top (unconstrained), replace it with a fresh atom, which is
+  // still unconstrained. Analogous to unpacking TopBoolValues in the framework.
+  if (Bool1 == nullptr)
+    Bool1 = &A.makeAtomRef(A.makeAtom());
+  if (Bool2 == nullptr)
+    Bool2 = &A.makeAtomRef(A.makeAtom());
 
-  // If `Bool1` and `Bool2` is constrained to the same true / false value, that
-  // can serve as the return value - this simplifies the flow condition tracked
-  // in `MergedEnv`.  Otherwise, information about which path was taken is used
-  // to associate the return value with `Bool1` and `Bool2`.
-  if (Env1.proves(*Bool1)) {
-    if (Env2.proves(*Bool2)) {
-      return &A.makeLiteral(true);
-    }
-  } else if (Env1.proves(A.makeNot(*Bool1)) && Env2.proves(A.makeNot(*Bool2))) {
+  // If `Bool1` and `Bool2` are constrained to the same true / false value,
+  // return that literal directly rather than delegating to `joinBoolValues`
+  // (which in the SAT model would allocate a fresh atom and flow-condition
+  // constraint).
+  if (Env1.proves(*Bool1) && Env2.proves(*Bool2)) {
+    return &A.makeLiteral(true);
+  }
+  if (Env1.proves(A.makeNot(*Bool1)) && Env2.proves(A.makeNot(*Bool2))) {
     return &A.makeLiteral(false);
   }
 
-  const Formula &MergedBool = A.makeAtomRef(A.makeAtom());
-  const Atom FC1 = Env1.getFlowConditionToken();
-  const Atom FC2 = Env2.getFlowConditionToken();
-  MergedEnv.assume(A.makeOr(
-      A.makeAnd(A.makeAtomRef(FC1), A.makeEquals(MergedBool, *Bool1)),
-      A.makeAnd(A.makeAtomRef(FC2), A.makeEquals(MergedBool, *Bool2))));
-  return &MergedBool;
+  return &MergedEnv
+              .joinBoolValues(A.makeBoolValue(*Bool1), Env1,
+                              A.makeBoolValue(*Bool2), Env2)
+              .formula();
+}
+
+// If a pointer is provably non-null in `Env`, it cannot contribute a null value
+// from a nullable source when joining or widening with another branch.
+static const Formula *
+clearFromNullableIfProvablyNonnull(PointerNullState Nullability,
+                                   const Environment &Env) {
+  Arena &A = Env.arena();
+  if (Nullability.FromNullable != &A.makeLiteral(false) &&
+      Nullability.IsNull != nullptr &&
+      Env.proves(A.makeNot(*Nullability.IsNull))) {
+    return &A.makeLiteral(false);
+  }
+  return Nullability.FromNullable;
 }
 
 void PointerNullabilityAnalysis::join(QualType Type, const Value &Val1,
@@ -169,9 +185,9 @@ void PointerNullabilityAnalysis::join(QualType Type, const Value &Val1,
   PointerNullState Nullability1 = getPointerNullState(cast<PointerValue>(Val1));
   PointerNullState Nullability2 = getPointerNullState(cast<PointerValue>(Val2));
 
-  const Formula *FromNullable =
-      mergeFormulas(Nullability1.FromNullable, Env1, Nullability2.FromNullable,
-                    Env2, MergedEnv);
+  const Formula *FromNullable = mergeFormulas(
+      clearFromNullableIfProvablyNonnull(Nullability1, Env1), Env1,
+      clearFromNullableIfProvablyNonnull(Nullability2, Env2), Env2, MergedEnv);
   const Formula *Null = mergeFormulas(Nullability1.IsNull, Env1,
                                       Nullability2.IsNull, Env2, MergedEnv);
 
@@ -265,16 +281,19 @@ PointerNullabilityAnalysis::widen(QualType Type, Value &Prev,
   if (!hasPointerNullState(*PrevPtr) || !hasPointerNullState(CurPtr))
     return std::nullopt;
 
-  auto [FromNullablePrev, NullPrev] = getPointerNullState(*PrevPtr);
-  auto [FromNullableCur, NullCur] = getPointerNullState(CurPtr);
+  PointerNullState NullabilityPrev = getPointerNullState(*PrevPtr);
+  PointerNullState NullabilityCur = getPointerNullState(CurPtr);
 
   auto [FromNullableWidened, FNWEffect] = widenNullabilityProperty(
-      FromNullablePrev, PrevEnv, FromNullableCur, CurrentEnv);
-  auto [NullWidened, NWEffect] =
-      widenNullabilityProperty(NullPrev, PrevEnv, NullCur, CurrentEnv);
+      clearFromNullableIfProvablyNonnull(NullabilityPrev, PrevEnv), PrevEnv,
+      clearFromNullableIfProvablyNonnull(NullabilityCur, CurrentEnv),
+      CurrentEnv);
+  auto [NullWidened, NWEffect] = widenNullabilityProperty(
+      NullabilityPrev.IsNull, PrevEnv, NullabilityCur.IsNull, CurrentEnv);
 
   if (LocUnchanged && FNWEffect == LatticeEffect::Unchanged &&
-      NWEffect == LatticeEffect::Unchanged)
+      NWEffect == LatticeEffect::Unchanged &&
+      FromNullableWidened == NullabilityCur.FromNullable)
     return WidenResult{&CurPtr, LatticeEffect::Unchanged};
 
   // Widen the loc if needed.

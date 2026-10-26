@@ -69,6 +69,8 @@ enum class BoolModelKind {
   Simple,
 };
 
+std::string boolModelKindToString(BoolModelKind Kind);
+
 /// Owns objects that encompass the state of a program and stores context that
 /// is used during dataflow analysis.
 class DataflowAnalysisContext {
