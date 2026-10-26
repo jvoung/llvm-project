@@ -11,20 +11,74 @@
 
 namespace clang::dataflow::test {
 
-#ifdef LLVM_WITH_Z3
-template <>
-Z3Solver
-SolverTest<Z3Solver>::createSolverWithLowTimeout() {
-  return Z3Solver(1);
+#if LLVM_WITH_Z3
+template <> Z3Solver SolverTest<Z3Solver>::createSolverWithLowTimeout() {
+  return Z3Solver(10);
 }
 
 namespace {
 
-INSTANTIATE_TYPED_TEST_SUITE_P(Z3SolverTest, SolverTest,
-                               Z3Solver, );
+INSTANTIATE_TYPED_TEST_SUITE_P(Z3SolverTest, SolverTest, Z3Solver, );
+
+TEST(Z3SolverSpecificTest, ReuseSolverDoesNotOvercountCumulativeRlimit) {
+  Arena A;
+  auto Constraints = parseFormulas(A, R"(
+     (!(V0 | V1) = (!V0 & !V1))
+     (!(V2 & V3) = (!V2 | !V3))
+  )");
+  // Each solve uses ~800-1000 rlimit units. 10 solves use < 20000 rlimit units
+  // in total (linear in N), whereas mistakenly summing cumulative
+  // "rlimit count" stats across calls grows quadratically (~45x single-solve
+  // cost) and would exceed 20000.
+  Z3Solver Solver(20000);
+  for (int I = 0; I < 10; ++I) {
+    EXPECT_EQ(Solver.solve(Constraints).getStatus(),
+              Solver::Result::Status::Satisfiable);
+    EXPECT_FALSE(Solver.reachedLimit());
+  }
+}
+
+TEST(Z3SolverSpecificTest, ExhaustingRlimitAcrossMultipleCallsSetsReachedLimit) {
+  Arena A;
+  auto Constraints = parseFormulas(A, R"(
+     (!(V0 | V1) = (!V0 & !V1))
+     (!(V2 & V3) = (!V2 | !V3))
+  )");
+  Z3Solver Solver(3000);
+  bool SawSatisfiable = false;
+  bool SawTimeout = false;
+  for (int I = 0; I < 10; ++I) {
+    Solver::Result Res = Solver.solve(Constraints);
+    if (Res.getStatus() == Solver::Result::Status::Satisfiable) {
+      SawSatisfiable = true;
+      EXPECT_FALSE(SawTimeout);
+      EXPECT_FALSE(Solver.reachedLimit());
+    } else {
+      EXPECT_EQ(Res.getStatus(), Solver::Result::Status::TimedOut);
+      SawTimeout = true;
+      EXPECT_TRUE(Solver.reachedLimit());
+    }
+  }
+  EXPECT_TRUE(SawSatisfiable);
+  EXPECT_TRUE(SawTimeout);
+}
+
+TEST(Z3SolverSpecificTest, ReuseSolverAcrossGrowingAndConflictingFormulas) {
+  Arena A;
+  Z3Solver Solver;
+  EXPECT_EQ(Solver.solve(parseFormulas(A, "(V0 & !V1)")).getStatus(),
+            Solver::Result::Status::Satisfiable);
+  // Conflicting with prior call and using more variables to grow BoolVars cache.
+  EXPECT_EQ(
+      Solver.solve(parseFormulas(A, "((!V0 & V1) & (!V2 & V3))")).getStatus(),
+      Solver::Result::Status::Satisfiable);
+  EXPECT_EQ(Solver.solve(parseFormulas(A, "(V4 = V5)\nV4\n!V5")).getStatus(),
+            Solver::Result::Status::Unsatisfiable);
+}
+
 
 } // namespace
 
-#endif  // LLVM_WITH_Z3
+#endif // LLVM_WITH_Z3
 
 } // namespace clang::dataflow::test

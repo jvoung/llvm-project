@@ -14,6 +14,9 @@
 #ifndef LLVM_CLANG_ANALYSIS_FLOWSENSITIVE_Z3SOLVER_H
 #define LLVM_CLANG_ANALYSIS_FLOWSENSITIVE_Z3SOLVER_H
 
+#include <cstdint>
+#include <vector>
+
 #include "clang/Analysis/FlowSensitive/Formula.h"
 #include "clang/Analysis/FlowSensitive/Solver.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -24,36 +27,33 @@ namespace dataflow {
 
 /// Wrapper around Z3 to use it as a SAT solver (not full SMT).
 class Z3Solver : public Solver {
-
 public:
-  Z3Solver() : Solver(llvm::CreateZ3Solver()) {
-    Solver->setBoolParam("model", true);
-  }
+  Z3Solver() = default;
 
   // Creates a Z3-based solver with the given "rlimit" (0 is unlimited).
   // Rlimit is a count of operations, which may be more deterministic
   // than time. However, it could change across Z3 versions:
   // https://stackoverflow.com/questions/45457131/what-is-the-relation-between-options-rlimit-and-timeout/45458651#45458651
-  explicit Z3Solver(std::uint32_t Rlimit) :
-                    Rlimit(Rlimit),
-                    Solver(llvm::CreateZ3Solver()) {
-    Solver->setBoolParam("model", true);
-  }
+  explicit Z3Solver(std::uint32_t Rlimit) : Rlimit(Rlimit) {}
+
+  Z3Solver(const Z3Solver &) = delete;
+  Z3Solver &operator=(const Z3Solver &) = delete;
+  Z3Solver(Z3Solver &&) = default;
+  Z3Solver &operator=(Z3Solver &&) = default;
 
   Result solve(llvm::ArrayRef<const Formula *> Vals) override;
 
   bool reachedLimit() const override { return EverTimedOut; }
 
 private:
-  inline constexpr static std::uint32_t kSolveCallsBeforeGC = 500;
-
   std::uint32_t Rlimit = 0; // 0 is unlimited
-  std::uint32_t RlimitUsed = 0; // track rlimit used (if Rlimit is non-zero)
-  std::uint32_t SolveCalls = 0;
-  llvm::SMTSolverRef Solver;
   bool EverTimedOut = false;
-
-  void updateRlimitUsed(const llvm::SMTSolverRef &Solver);
+  llvm::SMTSolverRef Solver;
+  llvm::SMTSortRef BoolSort = nullptr;
+  // Cache of the false expression and variables we've created (plus negations).
+  llvm::SMTExprRef FalseExpr = nullptr;
+  std::vector<llvm::SMTExprRef> BoolVars;
+  std::vector<llvm::SMTExprRef> NegatedBoolVars;
 };
 
 } // namespace dataflow
